@@ -1,15 +1,17 @@
 #!/usr/bin/env bash
 # Claude Code status line
-# Format: dir | branch | [bar] % | session: $X
+# Format: dir | branch | model | [bar] % | session: $X · Xm Xs
 
 input=$(cat)
 
-IFS=$'\t' read -r cwd ctx_pct session_cost session_id < <(
+IFS=$'\t' read -r cwd ctx_pct session_cost session_id model_name duration_ms < <(
   printf '%s' "$input" | jq -r '[
     .workspace.current_dir // .cwd // "",
     .context_window.used_percentage // "",
     .cost.total_cost_usd // "",
-    .session_id // ""
+    .session_id // "",
+    .model.display_name // "",
+    .cost.total_duration_ms // ""
   ] | @tsv'
 )
 
@@ -36,7 +38,10 @@ if [ -n "$cwd" ] && [ -n "$session_id" ]; then
   [ -n "$branch" ] && parts+=("$branch")
 fi
 
-# ── 2. Context window bar ─────────────────────────────────────────────────────
+# ── 2. Model name ─────────────────────────────────────────────────────────────
+[ -n "$model_name" ] && parts+=("$model_name")
+
+# ── 3. Context window bar ─────────────────────────────────────────────────────
 if [ -n "$ctx_pct" ]; then
   pct=$(printf '%.0f' "$ctx_pct")
   color=$(pct_color "$pct")
@@ -49,9 +54,14 @@ if [ -n "$ctx_pct" ]; then
   parts+=("$(printf "${color}[%s] %d%%\033[0m" "$bar" "$pct")")
 fi
 
-# ── 3. Session cost (from stdin, zero latency) ────────────────────────────────
-if [ -n "$session_cost" ] && [ "$session_cost" != "0" ]; then
-  parts+=("$(printf '\033[33msession: $%.3f\033[0m' "$session_cost")")
+# ── 4. Session cost + duration ────────────────────────────────────────────────
+cost=${session_cost:-0}
+if [ -n "$duration_ms" ]; then
+  mins=$(( duration_ms / 60000 ))
+  secs=$(( (duration_ms % 60000) / 1000 ))
+  parts+=("$(printf '\033[33msession: $%.3f · %dm %ds\033[0m' "$cost" "$mins" "$secs")")
+else
+  parts+=("$(printf '\033[33msession: $%.3f\033[0m' "$cost")")
 fi
 
 # ── Join with " | " and print ─────────────────────────────────────────────────
