@@ -1,0 +1,27 @@
+#!/usr/bin/env bash
+# Poll WSL clipboard every 1s, convert BMP→PNG, keep PNG available for chat:imagePaste
+
+PIDFILE=/tmp/clip2png.pid
+if [ -f "$PIDFILE" ] && kill -0 "$(cat "$PIDFILE")" 2>/dev/null; then
+  exit 0  # already running
+fi
+echo $$ > "$PIDFILE"
+trap 'rm -f "$PIDFILE"' EXIT
+
+LAST=/tmp/clip2png-last.png
+
+while sleep 1; do
+  types=$(wl-paste --list-types 2>/dev/null) || continue
+
+  if echo "$types" | grep -q "^image/png$"; then
+    wl-paste --type image/png > "$LAST" 2>/dev/null
+
+  elif echo "$types" | grep -qE "^image/bmp$|^image/x-bmp$|^image/x-MS-bmp$"; then
+    wl-paste --type image/bmp 2>/dev/null \
+      | convert bmp:- "$LAST" 2>/dev/null \
+      && wl-copy --type image/png < "$LAST" 2>/dev/null
+
+  elif ! echo "$types" | grep -q "^text/" && [ -f "$LAST" ]; then
+    wl-copy --type image/png < "$LAST" 2>/dev/null
+  fi
+done
